@@ -143,7 +143,7 @@ def fetch_bars_pandas(iterator):
 
 
 bars_df = symbols_df.mapInPandas(fetch_bars_pandas, schema=output_schema)
-bars_df = bars_df.cache()
+# bars_df = bars_df.cache()
 print(f"Fetched {bars_df.count()} daily bars across {len(symbols)} tickers.")
 display(bars_df.limit(10))
 
