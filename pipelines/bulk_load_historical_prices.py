@@ -69,24 +69,41 @@ print(f"Found {len(symbols)} distinct watched tickers: {symbols}")
 # MAGIC %md
 # MAGIC ## Fetch historical bars in parallel with Spark
 # MAGIC
-# MAGIC Each partition of the symbols RDD independently calls the Massive API
-# MAGIC for its share of tickers - this is what makes it a genuine distributed
-# MAGIC Spark job rather than a driver-only loop. The Massive API key is
-# MAGIC fetched once per partition (not once per symbol) to avoid hammering
-# MAGIC the secrets API.
+# MAGIC Uses `mapInPandas` (a DataFrame-level API) instead of
+# MAGIC `sparkContext.parallelize(...).mapPartitions(...)`, since the raw
+# MAGIC RDD/SparkContext API is not available on Databricks Serverless
+# MAGIC compute. `mapInPandas` still distributes the work across
+# MAGIC partitions - each partition independently calls the Massive API for
+# MAGIC its share of tickers - without needing direct SparkContext access.
 
 # COMMAND ----------
 
 from datetime import date, timedelta
 
+from pyspark.sql.types import StructType, StructField, StringType, LongType, DoubleType
+import pandas as pd
+
 from_date = (date.today() - timedelta(days=LOOKBACK_DAYS)).isoformat()
 to_date = date.today().isoformat()
 
+symbols_df = spark.createDataFrame([(s,) for s in symbols], ["symbol"])
 
-def fetch_partition(symbols_iter):
+output_schema = StructType([
+    StructField("symbol", StringType(), True),
+    StructField("epoch_ms", LongType(), True),
+    StructField("open", DoubleType(), True),
+    StructField("high", DoubleType(), True),
+    StructField("low", DoubleType(), True),
+    StructField("close", DoubleType(), True),
+    StructField("volume", DoubleType(), True),
+])
+
+
+def fetch_bars_pandas(iterator):
     """
-    Runs on each executor: fetch historical bars for this partition's
-    symbols from the Massive Stocks API.
+    Runs on each partition: fetch historical bars for this partition's
+    symbols from the Massive Stocks API. Receives/yields pandas
+    DataFrames, per the mapInPandas contract.
     """
     import base64 as _b64
 
@@ -97,37 +114,36 @@ def fetch_partition(symbols_iter):
     secret = _w.secrets.get_secret(scope=MASSIVE_SECRET_SCOPE, key=MASSIVE_SECRET_KEY)
     api_key = _b64.b64decode(secret.value).decode("utf-8")
 
-    results = []
-    for symbol in symbols_iter:
-        try:
-            resp = requests.get(
-                f"https://api.massive.com/v2/aggs/ticker/{symbol}/range/1/day/{from_date}/{to_date}",
-                params={"apiKey": api_key},
-                timeout=15,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            for bar in data.get("results") or []:
-                results.append({
-                    "symbol": symbol,
-                    "epoch_ms": bar.get("t"),
-                    "open": bar.get("o"),
-                    "high": bar.get("h"),
-                    "low": bar.get("l"),
-                    "close": bar.get("c"),
-                    "volume": bar.get("v"),
-                })
-        except Exception as exc:
-            print(f"Skipping {symbol}: {exc}")
-            continue
+    for pdf in iterator:
+        rows = []
+        for symbol in pdf["symbol"]:
+            try:
+                resp = requests.get(
+                    f"https://api.massive.com/v2/aggs/ticker/{symbol}/range/1/day/{from_date}/{to_date}",
+                    params={"apiKey": api_key},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                for bar in data.get("results") or []:
+                    rows.append({
+                        "symbol": symbol,
+                        "epoch_ms": bar.get("t"),
+                        "open": bar.get("o"),
+                        "high": bar.get("h"),
+                        "low": bar.get("l"),
+                        "close": bar.get("c"),
+                        "volume": bar.get("v"),
+                    })
+            except Exception as exc:
+                print(f"Skipping {symbol}: {exc}")
+                continue
 
-    return results
+        yield pd.DataFrame(rows, columns=["symbol", "epoch_ms", "open", "high", "low", "close", "volume"])
 
 
-symbols_rdd = spark.sparkContext.parallelize(symbols, numSlices=min(len(symbols), 8) or 1)
-bars_rdd = symbols_rdd.mapPartitions(fetch_partition)
-
-bars_df = spark.createDataFrame(bars_rdd)
+bars_df = symbols_df.mapInPandas(fetch_bars_pandas, schema=output_schema)
+bars_df = bars_df.cache()
 print(f"Fetched {bars_df.count()} daily bars across {len(symbols)} tickers.")
 display(bars_df.limit(10))
 
