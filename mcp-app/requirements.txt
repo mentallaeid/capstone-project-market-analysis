@@ -1,0 +1,6 @@
+fastmcp
+requests
+psycopg2-binary
+sqlalchemy
+databricks-sdk
+sentence-transformers
