@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Stock Research Assistant</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --card-bg: #ffffff;
+      --border: #e4e7ee;
+      --text: #1f2430;
+      --muted: #6b7280;
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --danger: #dc2626;
+      --green: #15803d;
+      --red: #dc2626;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 20px;
+      color: var(--text);
+      background: var(--bg);
+    }
+    h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+    h2 { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+    .hint { color: var(--muted); font-size: 13px; margin-top: 4px; line-height: 1.5; }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-top: 24px;
+      box-shadow: 0 1px 3px rgba(16, 24, 40, 0.04);
+    }
+    label { display: block; margin-top: 16px; font-weight: 600; font-size: 13px; }
+    label:first-child { margin-top: 0; }
+    input[type="text"], textarea, select {
+      width: 100%;
+      padding: 10px 12px;
+      margin-top: 6px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+    }
+    button {
+      margin-top: 16px;
+      padding: 9px 16px;
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    button:hover { background: var(--accent-hover); }
+    button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+    button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 6px 10px; font-size: 12px; margin-top: 0; }
+    button.danger:hover { background: var(--danger); color: #fff; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: #fafbfe; }
+    .positive { color: var(--green); font-weight: 600; }
+    .negative { color: var(--red); font-weight: 600; }
+    .result { margin-top: 12px; font-size: 13px; color: var(--muted); white-space: pre-wrap; }
+    .news-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .news-item:last-child { border-bottom: none; }
+    .news-item .meta { color: var(--muted); font-size: 12px; }
+    .note-item { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .note-item .meta { color: var(--muted); font-size: 11px; }
+    #detail { display: none; }
+    .back-link { color: var(--accent); font-size: 13px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Stock Research Assistant</h1>
+  <p class="hint">Track tickers, review fundamentals and news, and save your own research notes.</p>
+
+  <div id="watchlist-view">
+    <div class="card">
+      <h2>Add a ticker</h2>
+      <form id="add-form">
+        <label for="symbol-input">Symbol</label>
+        <input type="text" id="symbol-input" placeholder="AAPL" required>
+        <button type="submit">Add to watchlist</button>
+      </form>
+      <div id="add-result" class="result"></div>
+    </div>
+
+    <div class="card">
+      <h2>Your watchlist</h2>
+      <table>
+        <thead>
+          <tr><th>Symbol</th><th>Name</th><th>Price</th><th>1D Return</th><th>Updated</th><th></th></tr>
+        </thead>
+        <tbody id="watchlist-body"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Analysis reports</h2>
+      <div id="reports-body"></div>
+    </div>
+  </div>
+
+  <div id="detail" class="card">
+    <span class="back-link" id="back-link">&larr; Back to watchlist</span>
+    <h2 id="detail-name"></h2>
+    <p class="hint" id="detail-sector"></p>
+    <p id="detail-price"></p>
+    <p id="detail-description"></p>
+
+    <h2>Recent news</h2>
+    <div id="detail-news"></div>
+
+    <h2>Research notes</h2>
+    <div id="detail-notes"></div>
+    <textarea id="note-text" rows="3" placeholder="Add a research note..."></textarea>
+    <button id="add-note-btn">Save note</button>
+    <div id="note-result" class="result"></div>
+  </div>
+
+  <script>
+    const addForm = document.getElementById("add-form");
+    const addResultEl = document.getElementById("add-result");
+    const watchlistBody = document.getElementById("watchlist-body");
+    const reportsBody = document.getElementById("reports-body");
+
+    const watchlistView = document.getElementById("watchlist-view");
+    const detailView = document.getElementById("detail");
+    const backLink = document.getElementById("back-link");
+
+    let currentSymbol = null;
+
+    function fmtReturn(pct) {
+      if (pct === null || pct === undefined) return "-";
+      const cls = pct >= 0 ? "positive" : "negative";
+      const sign = pct >= 0 ? "+" : "";
+      return `<span class="${cls}">${sign}${Number(pct).toFixed(2)}%</span>`;
+    }
+
+    async function loadWatchlist() {
+      const resp = await fetch("/watchlist");
+      const data = await resp.json();
+      watchlistBody.innerHTML = "";
+      if (!resp.ok) {
+        watchlistBody.innerHTML = `<tr><td colspan="6">Error: ${data.error || resp.statusText}</td></tr>`;
+        return;
+      }
+      if (!data.length) {
+        watchlistBody.innerHTML = `<tr><td colspan="6">Your watchlist is empty. Add a ticker above.</td></tr>`;
+        return;
+      }
+      data.forEach((row) => {
+        const tr = document.createElement("tr");
+        tr.className = "clickable";
+        const price = row.price !== null && row.price !== undefined ? Number(row.price).toFixed(2) : "-";
+        const updated = row.snapshot_time ? new Date(row.snapshot_time).toLocaleDateString() : "-";
+        tr.innerHTML = `
+          <td>${row.symbol}</td>
+          <td>${row.name || "-"}</td>
+          <td>${price}</td>
+          <td>${fmtReturn(row.daily_return_pct)}</td>
+          <td>${updated}</td>
+          <td><button class="danger" data-symbol="${row.symbol}">Remove</button></td>
+        `;
+        tr.addEventListener("click", (e) => {
+          if (e.target.tagName === "BUTTON") return;
+          openDetail(row.symbol);
+        });
+        watchlistBody.appendChild(tr);
+      });
+    }
+
+    async function loadReports() {
+      const resp = await fetch("/analysis-reports");
+      const data = await resp.json();
+      if (!resp.ok || !data.length) {
+        reportsBody.innerHTML = `<p class="hint">No analysis reports yet.</p>`;
+        return;
+      }
+      reportsBody.innerHTML = data.map((r) => `
+        <div class="note-item">
+          <div><strong>${r.symbols.join(", ")}</strong> - ${r.report_type}</div>
+          <div>${r.report_text}</div>
+          <div class="meta">${new Date(r.created_at).toLocaleString()}</div>
+        </div>
+      `).join("");
+    }
+
+    watchlistBody.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button.danger");
+      if (!btn) return;
+      e.stopPropagation();
+      const symbol = btn.dataset.symbol;
+      await fetch(`/watchlist/${symbol}`, { method: "DELETE" });
+      loadWatchlist();
+    });
+
+    addForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const symbol = document.getElementById("symbol-input").value.trim().toUpperCase();
+      addResultEl.textContent = "Adding...";
+      try {
+        const resp = await fetch("/watchlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          addResultEl.textContent = "Error: " + (data.error || resp.statusText);
+          return;
+        }
+        addResultEl.textContent = `Added ${data.symbol}.`;
+        document.getElementById("symbol-input").value = "";
+        loadWatchlist();
+      } catch (err) {
+        addResultEl.textContent = "Request failed: " + err;
+      }
+    });
+
+    async function openDetail(symbol) {
+      currentSymbol = symbol;
+      watchlistView.style.display = "none";
+      detailView.style.display = "block";
+
+      const resp = await fetch(`/companies/${symbol}`);
+      const data = await resp.json();
+      if (!resp.ok) {
+        document.getElementById("detail-name").textContent = symbol;
+        document.getElementById("detail-description").textContent = data.error || "Error loading company.";
+        return;
+      }
+
+      document.getElementById("detail-name").textContent = `${data.company.name || symbol} (${symbol})`;
+      document.getElementById("detail-sector").textContent = data.company.sector || "";
+      document.getElementById("detail-description").textContent = data.company.description || "";
+
+      const priceEl = document.getElementById("detail-price");
+      if (data.latest_price) {
+        priceEl.innerHTML = `Price: <strong>${Number(data.latest_price.price).toFixed(2)}</strong> ` +
+          `(${fmtReturn(data.latest_price.daily_return_pct)}) - 7d avg: ${data.latest_price.moving_avg_7d ?? "-"}`;
+      } else {
+        priceEl.textContent = "No price data synced yet.";
+      }
+
+      const newsEl = document.getElementById("detail-news");
+      newsEl.innerHTML = data.recent_news.length
+        ? data.recent_news.map((n) => `
+            <div class="news-item">
+              <div><strong>${n.title}</strong></div>
+              <div>${n.description || ""}</div>
+              <div class="meta">${n.source || ""} - ${n.published_at ? new Date(n.published_at).toLocaleDateString() : ""}</div>
+            </div>
+          `).join("")
+        : `<p class="hint">No news synced yet for this ticker.</p>`;
+
+      loadNotes(symbol);
+    }
+
+    async function loadNotes(symbol) {
+      const resp = await fetch(`/research-notes?symbol=${symbol}`);
+      const data = await resp.json();
+      const notesEl = document.getElementById("detail-notes");
+      notesEl.innerHTML = data.length
+        ? data.map((n) => `
+            <div class="note-item">
+              <div>${n.note_text}</div>
+              <div class="meta">${new Date(n.created_at).toLocaleString()}</div>
+            </div>
+          `).join("")
+        : `<p class="hint">No notes yet for ${symbol}.</p>`;
+    }
+
+    document.getElementById("add-note-btn").addEventListener("click", async () => {
+      const noteText = document.getElementById("note-text").value.trim();
+      const resultEl = document.getElementById("note-result");
+      if (!noteText) {
+        resultEl.textContent = "Note text is required.";
+        return;
+      }
+      resultEl.textContent = "Saving...";
+      try {
+        const resp = await fetch("/research-notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol: currentSymbol, note_text: noteText }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          resultEl.textContent = "Error: " + (data.error || resp.statusText);
+          return;
+        }
+        resultEl.textContent = "Saved.";
+        document.getElementById("note-text").value = "";
+        loadNotes(currentSymbol);
+      } catch (err) {
+        resultEl.textContent = "Request failed: " + err;
+      }
+    });
+
+    backLink.addEventListener("click", () => {
+      detailView.style.display = "none";
+      watchlistView.style.display = "block";
+      currentSymbol = null;
+    });
+
+    loadWatchlist();
+    loadReports();
+  </script>
+</body>
+</html>
