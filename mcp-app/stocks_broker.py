@@ -16,8 +16,8 @@ from databricks.sdk import WorkspaceClient
 
 _w = WorkspaceClient()
 
-_SECRET_SCOPE = os.environ.get("MASSIVE_SECRET_SCOPE", "database")
-_SECRET_KEY = os.environ.get("MASSIVE_SECRET_KEY", "massive-api-key")
+_SECRET_SCOPE = os.environ.get("MASSIVE_SECRET_SCOPE", "massive")
+_SECRET_KEY = os.environ.get("MASSIVE_SECRET_KEY", "api-key")
 _BASE_URL = "https://api.massive.com"
 
 
