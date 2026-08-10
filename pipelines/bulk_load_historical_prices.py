@@ -98,21 +98,26 @@ output_schema = StructType([
     StructField("volume", DoubleType(), True),
 ])
 
+# Fetch the API key ONCE on the driver, where WorkspaceClient() already
+# works (notebook auto-auth context). mapInPandas worker processes run
+# on executors WITHOUT that auto-auth context, so calling
+# WorkspaceClient() inside fetch_bars_pandas fails - instead, capture the
+# already-decoded key as a plain string in the closure below.
+import base64 as _b64
+_massive_secret = w.secrets.get_secret(scope=MASSIVE_SECRET_SCOPE, key=MASSIVE_SECRET_KEY)
+_massive_api_key = _b64.b64decode(_massive_secret.value).decode("utf-8")
+
 
 def fetch_bars_pandas(iterator):
     """
     Runs on each partition: fetch historical bars for this partition's
-    symbols from the Massive Stocks API. Receives/yields pandas
-    DataFrames, per the mapInPandas contract.
+    symbols from the Massive Stocks API. Uses the API key captured in
+    the closure above (_massive_api_key), NOT a fresh WorkspaceClient()
+    call, since worker processes lack the driver's auto-auth context.
     """
-    import base64 as _b64
-
     import requests
-    from databricks.sdk import WorkspaceClient as _WorkspaceClient
 
-    _w = _WorkspaceClient()
-    secret = _w.secrets.get_secret(scope=MASSIVE_SECRET_SCOPE, key=MASSIVE_SECRET_KEY)
-    api_key = _b64.b64decode(secret.value).decode("utf-8")
+    api_key = _massive_api_key
 
     for pdf in iterator:
         rows = []
@@ -143,7 +148,6 @@ def fetch_bars_pandas(iterator):
 
 
 bars_df = symbols_df.mapInPandas(fetch_bars_pandas, schema=output_schema)
-# bars_df = bars_df.cache()
 print(f"Fetched {bars_df.count()} daily bars across {len(symbols)} tickers.")
 display(bars_df.limit(10))
 
