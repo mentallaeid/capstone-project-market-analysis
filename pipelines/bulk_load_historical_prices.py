@@ -21,8 +21,8 @@
 
 # DBTITLE 1,Config
 dbutils.widgets.text("lookback_days", "90", "Days of history to fetch per ticker")
-dbutils.widgets.text("massive_secret_scope", "database", "Massive API secret scope")
-dbutils.widgets.text("massive_secret_key", "massive-api-key", "Massive API secret key")
+dbutils.widgets.text("massive_secret_scope", "massive", "Massive API secret scope")
+dbutils.widgets.text("massive_secret_key", "api-key", "Massive API secret key")
 
 LOOKBACK_DAYS = int(dbutils.widgets.get("lookback_days"))
 MASSIVE_SECRET_SCOPE = dbutils.widgets.get("massive_secret_scope")
